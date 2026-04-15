@@ -17,7 +17,11 @@ from config.settings import (
     WATCHLIST, LOGS_DIR, LOG_LEVEL,
     MARKET_OPEN_HOUR, MARKET_OPEN_MIN,
     MARKET_CLOSE_HOUR, MARKET_CLOSE_MIN,
-    POSTMORTEM_RUN_AT, IS_PAPER,
+    POSTMORTEM_RUN_AT,
+    ENVIRONMENT,
+    REQUIRE_TRADE_APPROVAL,
+    DB_PATH,
+    IS_PAPER,
 )
 from agents.orchestrator import build_trading_graph, run_ticker
 from agents.post_mortem import post_mortem_node
@@ -260,6 +264,9 @@ signal.signal(signal.SIGTERM, shutdown)
 
 if __name__ == "__main__":
     logger.info("Trading Agent System starting up...")
+    logger.info(f"Environment: {ENVIRONMENT} | Journal: {DB_PATH}")
+    if REQUIRE_TRADE_APPROVAL:
+        logger.warning("Trade approval mode is ENABLED — signals can be logged, but orders will not auto-execute.")
     logger.info(f"Watching {len(WATCHLIST)} tickers: {', '.join(WATCHLIST[:5])}...")
     logger.info(f"Market hours: {MARKET_OPEN_HOUR}:{MARKET_OPEN_MIN:02d}–{MARKET_CLOSE_HOUR}:{MARKET_CLOSE_MIN:02d} ET")
 
