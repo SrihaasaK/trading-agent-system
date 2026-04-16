@@ -39,7 +39,7 @@ logger.add(
 logger.add(
     str(LOGS_DIR / "bot_{time:YYYY-MM-DD}.log"),
     level="DEBUG",
-    rotation="1 day",
+    rotation="00:00",
     retention="30 days",
     compression="zip",
 )
