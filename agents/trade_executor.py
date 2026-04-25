@@ -25,6 +25,8 @@ from config.settings import (
     IS_PAPER,
     NTFY_TOPIC,
     REQUIRE_TRADE_APPROVAL,
+    TRAILING_STOP_BREAKEVEN_R,
+    TRAILING_STOP_TRAIL_R,
 )
 from agents.journal import (
     get_open_trades,
@@ -52,7 +54,7 @@ def send_ntfy(message: str, title: str = "Trading Agent", priority: str = "defau
             f"https://ntfy.sh/{NTFY_TOPIC}",
             data=message.encode("utf-8"),
             headers={
-                "Title": title,
+                "Title": title.encode("ascii", errors="replace").decode("ascii"),  # HTTP headers must be latin-1 safe
                 "Priority": priority,
                 "Tags": tags,
             },
@@ -83,9 +85,11 @@ def format_trade_alert(state: TradingState) -> str:
     stop_pct = abs(price - stop) / price * 100 if price > 0 else 0
     target_pct = abs(target - price) / price * 100 if price > 0 else 0
 
+    tier = state.get("confidence_tier", "STANDARD")
+
     return (
-        f"{'LONG' if direction == 'LONG' else 'SHORT'} SIGNAL — {ticker}\n"
-        f"Score: {score:.3f} | R:R = {rr:.1f}:1\n"
+        f"{'LONG' if direction == 'LONG' else 'SHORT'} SIGNAL — {ticker} [{tier}]\n"
+        f"Score: {score:.3f} | R:R = {rr:.1f}:1 | Tier: {tier}\n"
         f"\n"
         f"Entry: ${price:.2f}\n"
         f"Stop: ${stop:.2f} ({stop_pct:.1f}% away)\n"
@@ -280,6 +284,167 @@ def sync_trade_journal() -> dict:
     return {"checked": len(rows), "closed": closed, "updated": updated}
 
 
+def check_trailing_stops() -> dict:
+    """Check open positions and adjust stops based on R-multiple profit levels."""
+    open_trades = get_open_trades(include_pending_approval=False)
+    if not open_trades:
+        return {"checked": 0, "adjusted": 0}
+
+    try:
+        positions = {p.symbol: float(p.current_price) for p in alpaca.get_all_positions()}
+    except Exception as e:
+        logger.warning(f"[trade_executor] trailing stops: failed to fetch positions: {e}")
+        return {"checked": 0, "adjusted": 0}
+
+    adjusted = 0
+    for trade in open_trades:
+        ticker = trade.get("ticker", "")
+        if ticker not in positions:
+            continue
+
+        current_price = positions[ticker]
+        entry_price = float(trade.get("entry_price", 0) or 0)
+        stop_loss = float(trade.get("stop_loss", 0) or 0)
+        direction = trade.get("direction", "LONG")
+        order_id = trade.get("order_id", "")
+
+        if entry_price <= 0 or stop_loss <= 0 or not order_id:
+            continue
+
+        risk_per_share = abs(entry_price - stop_loss)
+        if risk_per_share <= 0:
+            continue
+
+        if direction == "LONG":
+            current_r = (current_price - entry_price) / risk_per_share
+        else:
+            current_r = (entry_price - current_price) / risk_per_share
+
+        new_stop = None
+        reason = ""
+
+        if current_r >= TRAILING_STOP_TRAIL_R:
+            # At 2R+: move stop to lock in 1R profit
+            if direction == "LONG":
+                candidate = entry_price + risk_per_share
+                if candidate > stop_loss:
+                    new_stop = candidate
+                    reason = f"trail to 1R profit (at {current_r:.1f}R)"
+            else:
+                candidate = entry_price - risk_per_share
+                if candidate < stop_loss:
+                    new_stop = candidate
+                    reason = f"trail to 1R profit (at {current_r:.1f}R)"
+        elif current_r >= TRAILING_STOP_BREAKEVEN_R:
+            # At 1R+: move stop to breakeven
+            if direction == "LONG" and entry_price > stop_loss:
+                new_stop = entry_price
+                reason = f"breakeven (at {current_r:.1f}R)"
+            elif direction == "SHORT" and entry_price < stop_loss:
+                new_stop = entry_price
+                reason = f"breakeven (at {current_r:.1f}R)"
+
+        if new_stop is None:
+            continue
+
+        new_stop = round(new_stop, 2)
+
+        # Try to replace the stop order via Alpaca
+        try:
+            order = alpaca.get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
+            stop_leg = None
+            for leg in (order.legs or []):
+                if getattr(leg, "stop_price", None) and _enum_value(leg.status).upper() not in ("FILLED", "CANCELED", "EXPIRED"):
+                    stop_leg = leg
+                    break
+
+            if stop_leg is None:
+                continue
+
+            try:
+                from alpaca.trading.requests import ReplaceOrderRequest
+                alpaca.replace_order_by_id(
+                    str(stop_leg.id),
+                    ReplaceOrderRequest(stop_price=new_stop),
+                )
+            except Exception:
+                # Fallback: cancel and resubmit
+                alpaca.cancel_order_by_id(str(stop_leg.id))
+                from alpaca.trading.requests import StopOrderRequest
+                side = OrderSide.SELL if direction == "LONG" else OrderSide.BUY
+                alpaca.submit_order(
+                    MarketOrderRequest(
+                        symbol=ticker,
+                        qty=int(trade.get("shares", 0) or 0),
+                        side=side,
+                        time_in_force=TimeInForce.DAY,
+                        type="stop",
+                        stop_price=new_stop,
+                    )
+                )
+
+            adjusted += 1
+            logger.info(f"[trade_executor] trailing stop: {ticker} stop moved to ${new_stop:.2f} ({reason})")
+            send_ntfy(
+                f"{ticker} stop adjusted: ${stop_loss:.2f} -> ${new_stop:.2f}\n"
+                f"Reason: {reason}\n"
+                f"Current: ${current_price:.2f} | Entry: ${entry_price:.2f}",
+                title=f"Stop Adjusted: {ticker}",
+                priority="default",
+                tags="shield",
+            )
+        except Exception as e:
+            logger.warning(f"[trade_executor] trailing stop: failed to adjust {ticker}: {e}")
+
+    return {"checked": len(open_trades), "adjusted": adjusted}
+
+
+def eod_force_close() -> dict:
+    """Close all day-traded positions at EOD to prevent overnight gap risk."""
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    open_trades = get_open_trades(include_pending_approval=False)
+    today_trades = [t for t in open_trades if (t.get("timestamp", "") or "").startswith(today)]
+
+    if not today_trades:
+        logger.info("[trade_executor] EOD close: no same-day positions to close")
+        return {"closed": 0, "errors": 0}
+
+    try:
+        live_positions = {p.symbol for p in alpaca.get_all_positions()}
+    except Exception as e:
+        logger.error(f"[trade_executor] EOD close: failed to fetch positions: {e}")
+        return {"closed": 0, "errors": 1}
+
+    closed = 0
+    errors = 0
+    symbols_closed = []
+    for trade in today_trades:
+        symbol = trade.get("ticker", "")
+        if symbol not in live_positions:
+            continue
+        try:
+            alpaca.close_position(symbol)
+            symbols_closed.append(symbol)
+            closed += 1
+            logger.info(f"[trade_executor] EOD close: closed {symbol}")
+        except Exception as e:
+            logger.error(f"[trade_executor] EOD close: failed to close {symbol}: {e}")
+            errors += 1
+
+    if closed > 0:
+        sync_trade_journal()
+        send_ntfy(
+            f"EOD force-close: {closed} position(s) closed\n"
+            f"Symbols: {', '.join(symbols_closed)}",
+            title="EOD Force-Close",
+            priority="high",
+            tags="clock3",
+        )
+
+    return {"closed": closed, "errors": errors}
+
+
 def trade_executor_node(state: TradingState) -> TradingState:
     """LangGraph node: executes approved trades or logs skips."""
     ticker = state["ticker"]
@@ -300,7 +465,8 @@ def trade_executor_node(state: TradingState) -> TradingState:
 
     alert = format_trade_alert(state)
     logger.info(f"[trade_executor]\n{alert}")
-    send_ntfy(alert, title=f"Signal: {ticker} {state.get('final_direction', '')}", tags="eyes")
+    tier = state.get("confidence_tier", "STANDARD")
+    send_ntfy(alert, title=f"Signal: {ticker} {state.get('final_direction', '')} [{tier}]", tags="eyes")
 
     if REQUIRE_TRADE_APPROVAL:
         logger.info("[trade_executor] APPROVAL MODE — signal logged, awaiting confirmation")

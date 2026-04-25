@@ -46,6 +46,7 @@ from config.settings import (
     MARKET_OPEN_HOUR, MARKET_OPEN_MIN,
     MARKET_CLOSE_HOUR, MARKET_CLOSE_MIN,
     ATR_LOOKBACK,
+    RVOL_HARD_FLOOR,
 )
 from agents.state import TradingState
 
@@ -74,7 +75,7 @@ ORDER_BLOCK_BARS  = 50        # look back N bars for order blocks
 VWAP_STD_TRIGGER  = 1.5       # std devs from VWAP for mean reversion
 HTF_INTERVAL      = "1d"      # higher timeframe for key levels
 HTF_LOOKBACK      = 20        # days of daily data for S/R
-SINGLE_VOTE_OVERRIDE_SOURCES = {"fvg", "bos"}
+SINGLE_VOTE_OVERRIDE_SOURCES = {"fvg", "bos", "order_block"}
 _htf_cache: dict[tuple[str, str], dict] = {}
 
 
@@ -266,18 +267,16 @@ def allow_single_signal_setup(
     ema_check: dict,
     adx_check: dict,
     rvol: float,
-    rvol_floor: float,
 ) -> bool:
     """Allow a single high-quality structural vote only when the rest of the tape is unusually clean."""
     if not direction_resolution.startswith("single_vote_override:"):
         return False
 
-    required_override_rvol = max(rvol_floor + 0.15, 1.15)
     return (
         smc_count == 1
-        and momentum_count == 2
-        and ema_check.get("with_trend", False)
-        and (adx_check.get("strong", False) or rvol >= required_override_rvol)
+        and momentum_count >= 1
+        and ema_check.get("aligned", False)
+        and (adx_check.get("strong", False) or rvol >= 0.8)
     )
 
 
@@ -660,7 +659,7 @@ def scan_ticker(ticker: str) -> dict:
             "ema_aligned":    ema_check["passes"],
             "vwap_position":  vwap_position,
             "adx_strength":   adx_check["passes"],
-            "rvol":           rvol >= rvol_floor,
+            "rvol":           rvol >= RVOL_HARD_FLOOR,
         }
         all_hard_gates_pass = all(hard_gates.values())
 
@@ -697,7 +696,6 @@ def scan_ticker(ticker: str) -> dict:
             ema_check,
             adx_check,
             rvol,
-            rvol_floor,
         )
 
         if not momentum_passes:
@@ -719,8 +717,10 @@ def scan_ticker(ticker: str) -> dict:
         if ema_check.get("with_trend"):     score += 0.04
         # Strong ADX
         if adx_check["strong"]:             score += 0.04
-        # Strong RVOL
-        if rvol >= RVOL_STRONG:             score += 0.03
+        # Tiered RVOL scoring
+        if rvol >= 1.5:                     score += 0.04
+        elif rvol >= 1.0:                   score += 0.02
+        elif rvol >= 0.7:                   score += 0.01
         # All 3 SMC signals
         if smc_count == 3:                  score += 0.06
         elif smc_count == 2:                score += 0.03

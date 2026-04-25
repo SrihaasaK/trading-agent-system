@@ -22,10 +22,15 @@ from config.settings import (
     REQUIRE_TRADE_APPROVAL,
     DB_PATH,
     IS_PAPER,
+    EOD_CLOSE_ENABLED,
+    EOD_CLOSE_MINUTE,
+    HEARTBEAT_FILE,
+    TRAILING_STOP_ENABLED,
+    TRAILING_STOP_INTERVAL_MIN,
 )
 from agents.orchestrator import build_trading_graph, run_ticker
 from agents.post_mortem import post_mortem_node
-from agents.trade_executor import sync_trade_journal, send_ntfy
+from agents.trade_executor import sync_trade_journal, send_ntfy, eod_force_close
 
 
 # ── Logging Setup ─────────────────────────────────────────────────────────────
@@ -136,8 +141,17 @@ def _send_scan_summary(
     send_ntfy("\n".join(lines), title=title, priority=priority, tags=tags)
 
 
+def _write_heartbeat() -> None:
+    """Write current timestamp to heartbeat file for watchdog monitoring."""
+    try:
+        HEARTBEAT_FILE.write_text(datetime.now(pytz.timezone("America/New_York")).isoformat())
+    except Exception as e:
+        logger.warning(f"Failed to write heartbeat file: {e}")
+
+
 def heartbeat_notify() -> None:
     """Send a periodic status notification with portfolio summary."""
+    _write_heartbeat()
     try:
         from agents.risk_analyst import get_portfolio_state
         pf = get_portfolio_state(force_refresh=True)
@@ -237,6 +251,7 @@ def scan_cycle():
     )
 
     _send_scan_summary(now, executed, pending, skipped, errors, near_misses, skip_reasons)
+    _write_heartbeat()
 
 
 def run_post_mortem():
@@ -305,6 +320,31 @@ if __name__ == "__main__":
         id="heartbeat",
         name="Hourly heartbeat",
     )
+
+    # EOD force-close at 15:50 ET
+    if EOD_CLOSE_ENABLED:
+        scheduler.add_job(
+            eod_force_close,
+            "cron",
+            day_of_week="mon-fri",
+            hour=15,
+            minute=EOD_CLOSE_MINUTE,
+            id="eod_close",
+            name="EOD force-close",
+        )
+
+    # Trailing stop check every N minutes during market hours
+    if TRAILING_STOP_ENABLED:
+        from agents.trade_executor import check_trailing_stops
+        scheduler.add_job(
+            check_trailing_stops,
+            "cron",
+            day_of_week="mon-fri",
+            hour=f"{MARKET_OPEN_HOUR}-{MARKET_CLOSE_HOUR}",
+            minute=f"*/{TRAILING_STOP_INTERVAL_MIN}",
+            id="trailing_stops",
+            name="Trailing stop check",
+        )
 
     # Startup notification
     send_ntfy(

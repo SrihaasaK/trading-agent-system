@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <header>
+    <div class="brand">
+      <span class="status-ring" id="status-dot"></span>
+      <span class="brand-name">AGENT</span>
+      <span class="badge" id="mode-badge">PAPER</span>
+    </div>
+    <div class="market-pill" id="market-pill">
+      <span class="mkt-dot"></span>
+      <span id="mkt-label">CHECKING</span>
+      <span class="mkt-divider">·</span>
+      <span id="mkt-countdown">—</span>
+    </div>
+    <nav class="header-metrics">
+      <div class="hm">
+        <span class="hm-label">Portfolio</span>
+        <span class="hm-value" id="h-portfolio">—</span>
+      </div>
+      <div class="hm">
+        <span class="hm-label">Today P&amp;L</span>
+        <span class="hm-value" id="h-pnl">—</span>
+      </div>
+      <div class="hm">
+        <span class="hm-label">Cash</span>
+        <span class="hm-value" id="h-cash">—</span>
+      </div>
+      <div class="hm">
+        <span class="hm-label">Buying Power</span>
+        <span class="hm-value" id="h-bp">—</span>
+      </div>
+    </nav>
+    <div class="header-right">
+      <div class="scan-status">
+        <span class="scan-pulse" id="scan-pulse"></span>
+        <span id="last-update">connecting…</span>
+      </div>
+      <div class="clock" id="clock">--:--:-- ET</div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Stats Row -->
+    <section class="stats-row">
+      <div class="stat-card" style="--i:0">
+        <div class="stat-label">Win Rate</div>
+        <div class="stat-value" id="s-winrate">—</div>
+        <div class="stat-sub" id="s-winrate-sub">&nbsp;</div>
+      </div>
+      <div class="stat-card" style="--i:1">
+        <div class="stat-label">Avg R Multiple</div>
+        <div class="stat-value" id="s-avgr">—</div>
+        <div class="stat-sub">&nbsp;</div>
+      </div>
+      <div class="stat-card" style="--i:2">
+        <div class="stat-label">Profit Factor</div>
+        <div class="stat-value" id="s-pf">—</div>
+        <div class="stat-sub" id="s-pf-sub">&nbsp;</div>
+      </div>
+      <div class="stat-card" style="--i:3">
+        <div class="stat-label">Total P&amp;L (30d)</div>
+        <div class="stat-value" id="s-pnl">—</div>
+        <div class="stat-sub">&nbsp;</div>
+      </div>
+      <div class="stat-card" style="--i:4">
+        <div class="stat-label">Closed Trades</div>
+        <div class="stat-value" id="s-closed">—</div>
+        <div class="stat-sub">&nbsp;</div>
+      </div>
+      <div class="stat-card" style="--i:5">
+        <div class="stat-label">Pending Approval</div>
+        <div class="stat-value" id="s-pending">—</div>
+        <div class="stat-sub">requires review</div>
+      </div>
+    </section>
+
+    <!-- Mid Grid: Chart + Positions + Signals -->
+    <section class="mid-grid">
+
+      <div class="card card--accent" style="--i:6">
+        <div class="card-header">
+          <span class="card-title">Equity Curve</span>
+          <span class="card-meta">30-day cumulative P&amp;L</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="equity-chart"></canvas>
+          <div class="chart-empty" id="chart-empty">Equity curve populates after first closed trade</div>
+        </div>
+      </div>
+
+      <div class="card" style="--i:7">
+        <div class="card-header">
+          <span class="card-title">Open Positions</span>
+          <span class="card-badge" id="positions-count">0</span>
+        </div>
+        <div class="heat-row">
+          <span class="heat-lbl">Portfolio Heat</span>
+          <div class="heat-track">
+            <div class="heat-fill" id="heat-fill" style="width:0%"></div>
+          </div>
+          <span class="heat-pct" id="heat-pct">0.0%</span>
+        </div>
+        <div class="card-body no-pad">
+          <table class="data-table">
+            <thead>
+              <tr><th>Symbol</th><th>Side</th><th>Value</th><th>P&amp;L</th><th>%</th></tr>
+            </thead>
+            <tbody id="positions-body">
+              <tr><td colspan="5" class="empty-row">No open positions</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="--i:8">
+        <div class="card-header">
+          <span class="card-title">Signal Feed</span>
+          <span class="card-badge" id="signals-count">0</span>
+        </div>
+        <div class="signal-feed" id="signal-feed">
+          <div class="empty-row">No signals yet</div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Trade Log -->
+    <section class="card" style="--i:9">
+      <div class="card-header">
+        <span class="card-title">Trade Log</span>
+        <div class="tab-bar">
+          <button class="tab active" data-tab="executed">Executed</button>
+          <button class="tab" data-tab="pending">Pending</button>
+          <button class="tab" data-tab="skips">Skips</button>
+        </div>
+      </div>
+      <div id="tab-executed" class="tab-content active">
+        <div class="card-body no-pad">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Ticker</th><th>Dir</th>
+                <th>Entry</th><th>Stop</th><th>Target</th>
+                <th>Shares</th><th>Score</th><th>Regime</th>
+                <th>Status</th><th>Outcome</th><th>P&amp;L</th><th>R</th>
+              </tr>
+            </thead>
+            <tbody id="executed-body">
+              <tr><td colspan="13" class="empty-row">No executed trades</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="tab-pending" class="tab-content">
+        <div class="card-body no-pad">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Ticker</th><th>Dir</th>
+                <th>Entry</th><th>Stop</th><th>Target</th>
+                <th>Shares</th><th>Score</th><th>Reasoning</th>
+              </tr>
+            </thead>
+            <tbody id="pending-body">
+              <tr><td colspan="9" class="empty-row">No pending approvals</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="tab-skips" class="tab-content">
+        <div class="card-body no-pad">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Ticker</th><th>Score</th><th>Regime</th><th>Skip Reason</th>
+              </tr>
+            </thead>
+            <tbody id="skips-body">
+              <tr><td colspan="5" class="empty-row">No skips logged</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skip Breakdown -->
+    <section class="card" style="--i:10">
+      <div class="card-header">
+        <span class="card-title">Skip Breakdown</span>
+        <span class="card-meta">why setups are filtered out</span>
+      </div>
+      <div class="card-body">
+        <div id="skip-breakdown" class="skip-breakdown">
+          <div class="empty-row">Skip data appears during market hours</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
