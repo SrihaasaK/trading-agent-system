@@ -556,3 +556,12 @@ main {
   .stats-row { grid-template-columns: repeat(2, 1fr); }
   .header-metrics { display: none; }
 }
+
+/* Tier badges */
+.badge-sm { padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; }
+.tier-swing { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+.tier-std { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+.tier-scalp { background: rgba(234, 179, 8, 0.2); color: #facc15; }
+.clr-green { color: #4ade80; }
+.clr-red { color: #f87171; }
+.clr-blue { color: #60a5fa; }

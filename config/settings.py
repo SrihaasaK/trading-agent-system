@@ -31,7 +31,10 @@ NTFY_TOPIC          = os.getenv("NTFY_TOPIC", "")
 ENVIRONMENT         = os.getenv("ENVIRONMENT", "paper")   # paper | live
 LOG_LEVEL           = os.getenv("LOG_LEVEL", "INFO")
 IS_PAPER            = ENVIRONMENT == "paper"
-REQUIRE_TRADE_APPROVAL = os.getenv("REQUIRE_TRADE_APPROVAL", "true").lower() == "true"
+REQUIRE_TRADE_APPROVAL = os.getenv(
+    "REQUIRE_TRADE_APPROVAL",
+    "false" if IS_PAPER else "true",
+).lower() == "true"
 
 
 # ── Watchlist ─────────────────────────────────────────────────────────────────
@@ -41,7 +44,7 @@ WATCHLIST: List[str] = [
     # Mega-cap tech (high liquidity, tight spreads)
     "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN",
     # ETFs for macro regime detection
-    "SPY", "QQQ", "IWM", "VXX",
+    "SPY", "QQQ", "IWM",
     # High-volume individual names
     "TSLA", "AMD", "CRM", "PLTR", "UBER",
 ]
@@ -111,7 +114,7 @@ SIGNAL_WEIGHTS = {
 CONFIDENCE_TIERS = {
     "SWING":    {"min_score": 0.82, "atr_stop_mult": 2.0, "reward_risk": 3.0, "size_factor": 1.0},
     "STANDARD": {"min_score": 0.68, "atr_stop_mult": 1.5, "reward_risk": 2.0, "size_factor": 1.0},
-    "SCALP":    {"min_score": 0.60, "atr_stop_mult": 1.0, "reward_risk": 1.5, "size_factor": 0.5},
+    "SCALP":    {"min_score": 0.60, "atr_stop_mult": 1.25, "reward_risk": 1.5, "size_factor": 0.75},
 }
 
 

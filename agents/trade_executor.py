@@ -205,8 +205,15 @@ def _extract_exit_details(order, row: dict) -> dict | None:
     hold_minutes = 0.0
     if opened_at:
         try:
-            hold_minutes = round((datetime.fromisoformat(closed_at) - datetime.fromisoformat(opened_at)).total_seconds() / 60, 2)
-        except ValueError:
+            dt_close = datetime.fromisoformat(closed_at)
+            dt_open = datetime.fromisoformat(opened_at)
+            # Normalize: strip tzinfo from both to avoid naive vs aware mismatch
+            if dt_close.tzinfo is not None:
+                dt_close = dt_close.replace(tzinfo=None)
+            if dt_open.tzinfo is not None:
+                dt_open = dt_open.replace(tzinfo=None)
+            hold_minutes = round((dt_close - dt_open).total_seconds() / 60, 2)
+        except (ValueError, TypeError):
             hold_minutes = 0.0
 
     return {
@@ -244,8 +251,19 @@ def sync_trade_journal() -> dict:
             continue
 
         try:
-            order = alpaca.get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
-        except Exception as e:
+            import signal as _sig
+
+            def _timeout_handler(signum, frame):
+                raise TimeoutError(f"Alpaca order fetch timed out for {ticker}")
+
+            old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
+            _sig.alarm(10)
+            try:
+                order = alpaca.get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
+            finally:
+                _sig.alarm(0)
+                _sig.signal(_sig.SIGALRM, old_handler)
+        except (Exception, TimeoutError) as e:
             logger.warning(f"[trade_executor] sync order fetch failed for {ticker}: {e}")
             continue
 

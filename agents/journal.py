@@ -113,8 +113,10 @@ def rowdicts(cursor: sqlite3.Cursor) -> List[Dict[str, Any]]:
 
 
 def score_bucket(score: float) -> str:
+    if score < 0.60:
+        return "<0.60"
     if score < 0.68:
-        return "<0.68"
+        return "0.60-0.68"
     if score < 0.72:
         return "0.68-0.72"
     if score < 0.78:
@@ -402,6 +404,27 @@ def get_daily_realized_pnl() -> float:
             (f"{today}%",),
         )
         return float(cursor.fetchone()[0])
+    finally:
+        conn.close()
+
+
+def get_daily_trade_count(ticker: str = None) -> int:
+    """Count today's non-SKIP trades, optionally filtered by ticker."""
+    init_db()
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = get_connection()
+    try:
+        if ticker:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE direction != 'SKIP' AND ticker = ? AND timestamp LIKE ?",
+                (ticker, f"{today}%"),
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE direction != 'SKIP' AND timestamp LIKE ?",
+                (f"{today}%",),
+            )
+        return int(cursor.fetchone()[0])
     finally:
         conn.close()
 

@@ -26,12 +26,15 @@ from config.settings import (
     RISK_PER_TRADE_PCT,
     TRADE_COOLDOWN_MINUTES,
 )
-from agents.journal import estimate_open_risk_from_journal, get_daily_realized_pnl, get_recent_signals
+from agents.journal import estimate_open_risk_from_journal, get_daily_realized_pnl, get_daily_trade_count, get_open_trades, get_recent_signals
 from agents.state import TradingState
 
 alpaca_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=IS_PAPER)
 
 _portfolio_cache: dict = {"timestamp": None, "data": None}
+
+MAX_DAILY_TRADES_PER_TICKER = 2
+MAX_DAILY_TRADES_TOTAL = 10
 
 CORRELATED_GROUPS = {
     "mega_cap_tech": {"AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN", "AMD", "CRM", "NFLX", "TSLA", "QQQ"},
@@ -118,8 +121,8 @@ def get_portfolio_state(force_refresh: bool = False) -> dict:
             "open_positions": open_position_rows,
             "open_orders": open_order_rows,
             "position_count": len(open_position_rows),
-            "open_symbols": {row["symbol"] for row in open_position_rows},
-            "open_order_symbols": {row["symbol"] for row in open_order_rows},
+            "open_symbols": [row["symbol"] for row in open_position_rows],
+            "open_order_symbols": [row["symbol"] for row in open_order_rows],
             "estimated_open_risk": round(estimated_open_risk, 2),
             "heat_pct": round(heat_pct, 4),
             "available_slots": MAX_OPEN_POSITIONS - len(open_position_rows),
@@ -136,8 +139,8 @@ def get_portfolio_state(force_refresh: bool = False) -> dict:
             "open_positions": [],
             "open_orders": [],
             "position_count": 0,
-            "open_symbols": set(),
-            "open_order_symbols": set(),
+            "open_symbols": [],
+            "open_order_symbols": [],
             "estimated_open_risk": 0.0,
             "heat_pct": 0.0,
             "available_slots": MAX_OPEN_POSITIONS,
@@ -198,11 +201,11 @@ def calculate_position_size(
     }
 
 
-def _correlation_pressure(ticker: str, open_symbols: set[str]) -> int:
+def _correlation_pressure(ticker: str, open_symbols: list[str]) -> int:
     highest_overlap = 0
     for symbols in CORRELATED_GROUPS.values():
         if ticker in symbols:
-            overlap = len(symbols.intersection(open_symbols))
+            overlap = len(symbols.intersection(set(open_symbols)))
             highest_overlap = max(highest_overlap, overlap)
     return highest_overlap
 
@@ -295,6 +298,14 @@ def assess_risk(state: TradingState, portfolio: dict) -> dict:
     if recent_signals:
         reasons.append(f"{ticker} already triggered within the last {TRADE_COOLDOWN_MINUTES} minutes")
 
+    daily_ticker_count = get_daily_trade_count(ticker)
+    if daily_ticker_count >= MAX_DAILY_TRADES_PER_TICKER:
+        reasons.append(f"Daily max trades for {ticker} reached ({daily_ticker_count}/{MAX_DAILY_TRADES_PER_TICKER})")
+
+    daily_total_count = get_daily_trade_count()
+    if daily_total_count >= MAX_DAILY_TRADES_TOTAL:
+        reasons.append(f"Daily trade limit reached ({daily_total_count}/{MAX_DAILY_TRADES_TOTAL})")
+
     if sizing["shares"] <= 0:
         reasons.append("Position size rounded to zero under current caps")
     if rr_ratio < rr_target:
@@ -306,6 +317,18 @@ def assess_risk(state: TradingState, portfolio: dict) -> dict:
     elif correlation_overlap == 2:
         warnings.append("Elevated correlation risk with existing positions")
         grade = "YELLOW"
+
+    # Directional balance check
+    open_trades = get_open_trades(include_pending_approval=False)
+    if len(open_trades) >= 3:
+        long_count = sum(1 for t in open_trades if t.get("direction") == "LONG")
+        short_count = sum(1 for t in open_trades if t.get("direction") == "SHORT")
+        total_open = long_count + short_count
+        if total_open > 0:
+            dominant_pct = max(long_count, short_count) / total_open
+            if dominant_pct > 0.8 and direction == ("LONG" if long_count > short_count else "SHORT"):
+                warnings.append(f"Directional concentration: {max(long_count, short_count)}/{total_open} positions are {direction}")
+                grade = "YELLOW"
 
     if "capital" in sizing["constraints"] or "max_notional" in sizing["constraints"]:
         warnings.append("Position size capped by capital or single-name notional limits")

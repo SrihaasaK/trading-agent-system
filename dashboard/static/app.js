@@ -405,6 +405,50 @@ function renderEquityCurve(data) {
   });
 }
 
+// ── Positions ─────────────────────────────────────────────────────────────────
+
+async function loadPositions() {
+  try {
+    const res = await fetch('/api/positions?days=7');
+    const trades = await res.json();
+    const tbody = document.getElementById('positions-all-body');
+    if (!tbody) return;
+
+    if (!trades.length) {
+      tbody.innerHTML = '<tr><td colspan="13" class="empty-row">No positions yet</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = trades.map(t => {
+      const time = t.timestamp ? t.timestamp.substring(5, 16).replace('T', ' ') : '';
+      const status = t.closed ? (t.outcome || 'CLOSED') : 'OPEN';
+      const statusClass = t.closed ? (t.outcome === 'WIN' ? 'clr-green' : t.outcome === 'LOSS' ? 'clr-red' : '') : 'clr-blue';
+      const pnl = t.closed ? (t.pnl_dollars > 0 ? '+' : '') + t.pnl_dollars.toFixed(2) : '—';
+      const pnlClass = t.pnl_dollars > 0 ? 'clr-green' : t.pnl_dollars < 0 ? 'clr-red' : '';
+      const rVal = t.closed ? (t.pnl_r > 0 ? '+' : '') + t.pnl_r.toFixed(2) + 'R' : '—';
+      const tierBadge = t.confidence_tier === 'SWING' ? 'tier-swing' : t.confidence_tier === 'STANDARD' ? 'tier-std' : 'tier-scalp';
+
+      return '<tr>' +
+        '<td>' + time + '</td>' +
+        '<td><strong>' + t.ticker + '</strong></td>' +
+        '<td>' + t.direction + '</td>' +
+        '<td><span class="badge-sm ' + tierBadge + '">' + t.confidence_tier + '</span></td>' +
+        '<td>$' + (t.entry_price || 0).toFixed(2) + '</td>' +
+        '<td>$' + (t.stop_loss || 0).toFixed(2) + '</td>' +
+        '<td>$' + (t.take_profit || 0).toFixed(2) + '</td>' +
+        '<td>' + t.shares + '</td>' +
+        '<td>' + t.signal_score.toFixed(3) + '</td>' +
+        '<td class="' + statusClass + '">' + status + '</td>' +
+        '<td class="' + pnlClass + '">' + pnl + '</td>' +
+        '<td class="' + pnlClass + '">' + rVal + '</td>' +
+        '<td>' + (t.exit_reason || '—') + '</td>' +
+        '</tr>';
+    }).join('');
+  } catch (e) {
+    console.error('positions fetch error', e);
+  }
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 document.querySelectorAll('.tab').forEach(btn => {
@@ -425,7 +469,7 @@ async function refresh() {
   if (pulse) pulse.classList.add('active');
 
   try {
-    await Promise.all([loadPortfolio(), loadStats(), loadTrades()]);
+    await Promise.all([loadPortfolio(), loadStats(), loadTrades(), loadPositions()]);
 
     const now = new Date();
     const timeStr = now.toLocaleTimeString('en-US', {

@@ -142,12 +142,30 @@
       <div class="card-header">
         <span class="card-title">Trade Log</span>
         <div class="tab-bar">
-          <button class="tab active" data-tab="executed">Executed</button>
+          <button class="tab active" data-tab="positions">Positions</button>
+          <button class="tab" data-tab="executed">Executed</button>
           <button class="tab" data-tab="pending">Pending</button>
           <button class="tab" data-tab="skips">Skips</button>
         </div>
       </div>
-      <div id="tab-executed" class="tab-content active">
+      <div id="tab-positions" class="tab-content active">
+        <div class="card-body no-pad">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Ticker</th><th>Dir</th><th>Tier</th>
+                <th>Entry</th><th>Stop</th><th>Target</th>
+                <th>Shares</th><th>Score</th><th>Status</th>
+                <th>P&L</th><th>R</th><th>Exit</th>
+              </tr>
+            </thead>
+            <tbody id="positions-all-body">
+              <tr><td colspan="13" class="empty-row">Loading positions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="tab-executed" class="tab-content">
         <div class="card-body no-pad">
           <table class="data-table">
             <thead>

@@ -64,7 +64,7 @@ RVOL_MORNING_MIN  = 1.0
 RVOL_MIDDAY_MIN   = 0.95
 RVOL_AFTERNOON_MIN = 1.0
 RSI_PERIOD        = 14
-RSI_OB            = 65        # overbought (lower than classic 70 — more conservative)
+RSI_OB            = 70        # overbought (industry standard)
 RSI_OS            = 35        # oversold
 MACD_FAST         = 12
 MACD_SLOW         = 26
@@ -98,7 +98,7 @@ def get_session_label() -> str:
 
 def session_quality(session: str) -> float:
     """Morning and afternoon sessions have better setups than midday."""
-    return {"MORNING": 1.0, "AFTERNOON": 0.85, "MIDDAY": 0.65, "CLOSED": 0.0}.get(session, 0.5)
+    return {"MORNING": 1.0, "AFTERNOON": 0.85, "MIDDAY": 0.80, "CLOSED": 0.0}.get(session, 0.5)
 
 
 def normalize_direction(label: str) -> str:
@@ -187,7 +187,13 @@ def calculate_rvol(session_volume: pd.Series, full_volume: pd.Series | None = No
     if session_volume.empty:
         return 0.0
 
-    current = float(session_volume.iloc[-1])
+    # Use the last completed bar, not the currently forming bar (which may have 0 volume)
+    if len(session_volume) >= 2 and session_volume.iloc[-1] == 0:
+        current = float(session_volume.iloc[-2])
+    else:
+        current = float(session_volume.iloc[-1])
+    if current <= 0:
+        return 0.0
     baselines: list[float] = []
 
     recent = session_volume.iloc[:-1].tail(lookback)
@@ -468,7 +474,10 @@ def get_htf_levels(ticker: str) -> dict:
         last_close = float(df["Close"].iloc[-1])
         in_premium  = last_close > range_mid
         in_discount = last_close < range_mid
-        in_ote      = (range_mid * 0.62) <= last_close <= (range_mid * 0.79)  # OTE zone
+        # OTE = 61.8%-78.6% Fibonacci retracement of the weekly range
+        ote_low  = week_low + (week_high - week_low) * 0.618
+        ote_high = week_low + (week_high - week_low) * 0.786
+        in_ote   = ote_low <= last_close <= ote_high
 
         result = {
             "prev_day_high":  round(prev_day_high, 4),
@@ -661,7 +670,8 @@ def scan_ticker(ticker: str) -> dict:
             "adx_strength":   adx_check["passes"],
             "rvol":           rvol >= RVOL_HARD_FLOOR,
         }
-        all_hard_gates_pass = all(hard_gates.values())
+        hard_gate_pass_count = sum(hard_gates.values())
+        all_hard_gates_pass = hard_gate_pass_count >= 4
 
         if not all_hard_gates_pass:
             failed = [k for k, v in hard_gates.items() if not v]
@@ -680,7 +690,8 @@ def scan_ticker(ticker: str) -> dict:
                            if ob["detected"] else ob["detected"],
         }
         smc_count = sum(smc_signals.values())
-        smc_passes = smc_count >= 2
+        smc_strong_override = smc_count >= 1 and adx_last >= ADX_STRONG and rvol >= 1.0
+        smc_passes = smc_count >= 2 or smc_strong_override
 
         # ── MOMENTUM CONFIRMATION (min 1 of 2) ───────────────────────────
         momentum_signals = {
