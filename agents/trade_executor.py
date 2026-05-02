@@ -280,9 +280,24 @@ def sync_trade_journal() -> dict:
         # Check if THIS specific order has been filled and exited,
         # not just whether the ticker has any live position.
         # A ticker can have multiple journal entries from repeated trades.
-        if status in ("FILLED", "PARTIALLY_FILLED"):
+        if status in ("FILLED", "PARTIALLY_FILLED") and ticker not in live_positions:
             exit_details = _extract_exit_details(order, row)
-            if exit_details and ticker not in live_positions:
+            if not exit_details:
+                # Both bracket legs canceled (e.g., EOD force-close or manual liquidation).
+                # Position is gone but no exit leg filled — mark closed with entry price.
+                entry = float(row.get("entry_price", 0) or 0)
+                exit_details = {
+                    "close_price": entry,
+                    "pnl_dollars": 0.0,
+                    "pnl_r": 0.0,
+                    "outcome": "BREAKEVEN",
+                    "exit_reason": "MANUAL_EXIT",
+                    "closed_at": datetime.now().isoformat(),
+                    "hold_minutes": 0.0,
+                    "order_status": status,
+                }
+                logger.info(f"[trade_executor] {ticker} closed externally (no exit leg) — marking as MANUAL_EXIT")
+            if exit_details:
                 mark_trade_closed(order_id=order_id, **exit_details)
                 closed += 1
                 pnl = exit_details.get("pnl_dollars", 0)
