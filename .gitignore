@@ -18,12 +18,24 @@ build/
 data/historical/*.parquet
 data/journal.db
 data/chroma_db/
+data/.heartbeat
+
+# Databases (any location)
+*.db
+*.db-shm
+*.db-wal
 
 # Logs
 logs/*.log
+logs/*.log.*
+logs/*.zip
 logs/*.txt
 logs/postmortem_*.json
 logs/postmortem_*.md
+
+# OMC state (AI agent orchestration)
+.omc/state/
+.omc/project-memory.json
 
 # Mac
 .DS_Store

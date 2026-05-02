@@ -37,7 +37,13 @@ from agents.journal import (
 )
 from agents.state import TradingState
 
-alpaca = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=IS_PAPER)
+_alpaca = None
+
+def _get_alpaca():
+    global _alpaca
+    if _alpaca is None:
+        _alpaca = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=IS_PAPER)
+    return _alpaca
 
 
 def _enum_value(value) -> str:
@@ -111,12 +117,12 @@ def format_trade_alert(state: TradingState) -> str:
 
 def _get_live_symbols() -> tuple[set[str], set[str]]:
     try:
-        positions = {p.symbol for p in alpaca.get_all_positions()}
+        positions = {p.symbol for p in _get_alpaca().get_all_positions()}
     except Exception:
         positions = set()
 
     try:
-        open_orders = alpaca.get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=100, nested=True))
+        open_orders = _get_alpaca().get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=100, nested=True))
         orders = {o.symbol for o in open_orders}
     except Exception:
         orders = set()
@@ -151,7 +157,7 @@ def place_bracket_order(state: TradingState) -> dict:
             take_profit=TakeProfitRequest(limit_price=target),
             stop_loss=StopLossRequest(stop_price=stop),
         )
-        order = alpaca.submit_order(order_request)
+        order = _get_alpaca().submit_order(order_request)
         return {
             "order_id": str(order.id),
             "status": _enum_value(order.status),
@@ -237,7 +243,7 @@ def sync_trade_journal() -> dict:
         return {"checked": 0, "closed": 0, "updated": 0}
 
     try:
-        live_positions = {p.symbol for p in alpaca.get_all_positions()}
+        live_positions = {p.symbol for p in _get_alpaca().get_all_positions()}
     except Exception as e:
         logger.warning(f"[trade_executor] sync positions error: {e}")
         live_positions = set()
@@ -259,11 +265,11 @@ def sync_trade_journal() -> dict:
             old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
             _sig.alarm(10)
             try:
-                order = alpaca.get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
+                order = _get_alpaca().get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
             finally:
                 _sig.alarm(0)
                 _sig.signal(_sig.SIGALRM, old_handler)
-        except (Exception, TimeoutError) as e:
+        except Exception as e:
             logger.warning(f"[trade_executor] sync order fetch failed for {ticker}: {e}")
             continue
 
@@ -271,29 +277,30 @@ def sync_trade_journal() -> dict:
         update_order_state(order_id, status)
         updated += 1
 
-        if ticker in live_positions:
-            continue
-
-        exit_details = _extract_exit_details(order, row)
-        if exit_details:
-            mark_trade_closed(order_id=order_id, **exit_details)
-            closed += 1
-            pnl = exit_details.get("pnl_dollars", 0)
-            pnl_r = exit_details.get("pnl_r", 0)
-            outcome = exit_details.get("outcome", "?")
-            exit_reason = exit_details.get("exit_reason", "?")
-            hold_min = exit_details.get("hold_minutes", 0)
-            emoji = "money_with_wings" if pnl >= 0 else "chart_with_downwards_trend"
-            send_ntfy(
-                f"{ticker} CLOSED — {outcome}\n"
-                f"Exit: ${exit_details.get('close_price', 0):.2f} ({exit_reason})\n"
-                f"P&L: ${pnl:+,.2f} ({pnl_r:+.2f}R)\n"
-                f"Hold time: {hold_min:.0f} min\n"
-                f"Entry was: ${row.get('entry_price', 0):.2f}",
-                title=f"Trade Closed: {ticker} {outcome}",
-                priority="high" if abs(pnl) > 50 else "default",
-                tags=emoji,
-            )
+        # Check if THIS specific order has been filled and exited,
+        # not just whether the ticker has any live position.
+        # A ticker can have multiple journal entries from repeated trades.
+        if status in ("FILLED", "PARTIALLY_FILLED"):
+            exit_details = _extract_exit_details(order, row)
+            if exit_details and ticker not in live_positions:
+                mark_trade_closed(order_id=order_id, **exit_details)
+                closed += 1
+                pnl = exit_details.get("pnl_dollars", 0)
+                pnl_r = exit_details.get("pnl_r", 0)
+                outcome = exit_details.get("outcome", "?")
+                exit_reason = exit_details.get("exit_reason", "?")
+                hold_min = exit_details.get("hold_minutes", 0)
+                emoji = "money_with_wings" if pnl >= 0 else "chart_with_downwards_trend"
+                send_ntfy(
+                    f"{ticker} CLOSED — {outcome}\n"
+                    f"Exit: ${exit_details.get('close_price', 0):.2f} ({exit_reason})\n"
+                    f"P&L: ${pnl:+,.2f} ({pnl_r:+.2f}R)\n"
+                    f"Hold time: {hold_min:.0f} min\n"
+                    f"Entry was: ${row.get('entry_price', 0):.2f}",
+                    title=f"Trade Closed: {ticker} {outcome}",
+                    priority="high" if abs(pnl) > 50 else "default",
+                    tags=emoji,
+                )
             continue
 
         if status in {"CANCELED", "REJECTED", "EXPIRED"}:
@@ -309,7 +316,7 @@ def check_trailing_stops() -> dict:
         return {"checked": 0, "adjusted": 0}
 
     try:
-        positions = {p.symbol: float(p.current_price) for p in alpaca.get_all_positions()}
+        positions = {p.symbol: float(p.current_price) for p in _get_alpaca().get_all_positions()}
     except Exception as e:
         logger.warning(f"[trade_executor] trailing stops: failed to fetch positions: {e}")
         return {"checked": 0, "adjusted": 0}
@@ -369,7 +376,7 @@ def check_trailing_stops() -> dict:
 
         # Try to replace the stop order via Alpaca
         try:
-            order = alpaca.get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
+            order = _get_alpaca().get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
             stop_leg = None
             for leg in (order.legs or []):
                 if getattr(leg, "stop_price", None) and _enum_value(leg.status).upper() not in ("FILLED", "CANCELED", "EXPIRED"):
@@ -381,16 +388,16 @@ def check_trailing_stops() -> dict:
 
             try:
                 from alpaca.trading.requests import ReplaceOrderRequest
-                alpaca.replace_order_by_id(
+                _get_alpaca().replace_order_by_id(
                     str(stop_leg.id),
                     ReplaceOrderRequest(stop_price=new_stop),
                 )
             except Exception:
                 # Fallback: cancel and resubmit
-                alpaca.cancel_order_by_id(str(stop_leg.id))
+                _get_alpaca().cancel_order_by_id(str(stop_leg.id))
                 from alpaca.trading.requests import StopOrderRequest
                 side = OrderSide.SELL if direction == "LONG" else OrderSide.BUY
-                alpaca.submit_order(
+                _get_alpaca().submit_order(
                     MarketOrderRequest(
                         symbol=ticker,
                         qty=int(trade.get("shares", 0) or 0),
@@ -429,7 +436,7 @@ def eod_force_close() -> dict:
         return {"closed": 0, "errors": 0}
 
     try:
-        live_positions = {p.symbol for p in alpaca.get_all_positions()}
+        live_positions = {p.symbol for p in _get_alpaca().get_all_positions()}
     except Exception as e:
         logger.error(f"[trade_executor] EOD close: failed to fetch positions: {e}")
         return {"closed": 0, "errors": 1}
@@ -442,7 +449,7 @@ def eod_force_close() -> dict:
         if symbol not in live_positions:
             continue
         try:
-            alpaca.close_position(symbol)
+            _get_alpaca().close_position(symbol)
             symbols_closed.append(symbol)
             closed += 1
             logger.info(f"[trade_executor] EOD close: closed {symbol}")

@@ -98,7 +98,7 @@ def get_session_label() -> str:
 
 def session_quality(session: str) -> float:
     """Morning and afternoon sessions have better setups than midday."""
-    return {"MORNING": 1.0, "AFTERNOON": 0.85, "MIDDAY": 0.80, "CLOSED": 0.0}.get(session, 0.5)
+    return {"MORNING": 1.0, "AFTERNOON": 0.0, "MIDDAY": 0.70, "CLOSED": 0.0}.get(session, 0.5)
 
 
 def normalize_direction(label: str) -> str:
@@ -662,7 +662,7 @@ def scan_ticker(ticker: str) -> dict:
         vwap_position = check_vwap_position(price, vwap_val, direction)
         rvol_floor    = required_rvol(session, len(df_today))
 
-        # ── HARD GATE EVALUATION ──────────────────────────────────────────
+        # ── HARD GATE EVALUATION (4 of 5 must pass) ────────────────────
         hard_gates = {
             "session":        session != "CLOSED",
             "ema_aligned":    ema_check["passes"],

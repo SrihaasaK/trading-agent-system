@@ -5,7 +5,7 @@ All tunable parameters live here — never scatter magic numbers through agent c
 """
 
 import os
-from typing import List
+import pathlib
 
 from dotenv import load_dotenv
 
@@ -31,16 +31,13 @@ NTFY_TOPIC          = os.getenv("NTFY_TOPIC", "")
 ENVIRONMENT         = os.getenv("ENVIRONMENT", "paper")   # paper | live
 LOG_LEVEL           = os.getenv("LOG_LEVEL", "INFO")
 IS_PAPER            = ENVIRONMENT == "paper"
-REQUIRE_TRADE_APPROVAL = os.getenv(
-    "REQUIRE_TRADE_APPROVAL",
-    "false" if IS_PAPER else "true",
-).lower() == "true"
+REQUIRE_TRADE_APPROVAL = os.getenv("REQUIRE_TRADE_APPROVAL", "true").lower() == "true"
 
 
 # ── Watchlist ─────────────────────────────────────────────────────────────────
 # Keep this under 40 tickers — quality over quantity
 
-WATCHLIST: List[str] = [
+WATCHLIST: list[str] = [
     # Mega-cap tech (high liquidity, tight spreads)
     "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN",
     # ETFs for macro regime detection
@@ -50,7 +47,7 @@ WATCHLIST: List[str] = [
 ]
 
 # Tickers used only for macro context — not traded directly
-MACRO_TICKERS: List[str] = ["SPY", "QQQ", "IWM", "VXX", "TLT", "GLD"]
+MACRO_TICKERS: list[str] = ["SPY", "QQQ", "IWM", "VXX", "TLT", "GLD"]
 
 
 # ── Market Hours (Eastern Time) ───────────────────────────────────────────────
@@ -96,7 +93,7 @@ PORTFOLIO_CACHE_SECONDS = 15        # reuse Alpaca account state within one scan
 # ── Signal Confidence Gate ────────────────────────────────────────────────────
 # Tune these after backtesting — don't change them based on a bad week
 
-MIN_CONFIDENCE_SCORE    = 0.60      # below this: skip trade entirely (SCALP tier floor)
+MIN_CONFIDENCE_SCORE    = 0.65      # below this: skip trade entirely (SCALP tier floor)
 HIGH_CONFIDENCE_SCORE   = 0.82      # above this: SWING tier
 RVOL_HARD_FLOOR         = 0.5       # below this = truly dead tape, hard block
 
@@ -112,9 +109,9 @@ SIGNAL_WEIGHTS = {
 # risk_analyst uses scanner confidence for a provisional tier; signal_judge
 # overwrites with the final weighted score tier if they differ.
 CONFIDENCE_TIERS = {
-    "SWING":    {"min_score": 0.82, "atr_stop_mult": 2.0, "reward_risk": 3.0, "size_factor": 1.0},
-    "STANDARD": {"min_score": 0.68, "atr_stop_mult": 1.5, "reward_risk": 2.0, "size_factor": 1.0},
-    "SCALP":    {"min_score": 0.60, "atr_stop_mult": 1.25, "reward_risk": 1.5, "size_factor": 0.75},
+    "SWING":    {"min_score": 0.82, "atr_stop_mult": 3.0, "reward_risk": 3.0, "size_factor": 1.0},
+    "STANDARD": {"min_score": 0.68, "atr_stop_mult": 2.25, "reward_risk": 2.0, "size_factor": 1.0},
+    "SCALP":    {"min_score": 0.65, "atr_stop_mult": 1.75, "reward_risk": 1.5, "size_factor": 0.75},
 }
 
 
@@ -152,7 +149,6 @@ STRATEGY_VERSION        = "3.0"
 
 # ── Data Paths ────────────────────────────────────────────────────────────────
 
-import pathlib
 BASE_DIR        = pathlib.Path(__file__).parent.parent
 DATA_DIR        = BASE_DIR / "data"
 HISTORICAL_DIR  = DATA_DIR / "historical"

@@ -1,7 +1,8 @@
 # Trading Agent System
 
-A multi-agent algorithmic trading system for US stocks built with LangGraph,
-Claude AI, and Alpaca. Runs fully locally on your Mac Mini at $0 infrastructure cost.
+A multi-agent algorithmic trading system for US equities built with LangGraph, Claude AI,
+and Alpaca. Written by an 18-year-old incoming CS freshman as a learning project. Currently
+running in paper-trading mode on a Mac Mini. No live capital has ever been deployed.
 
 ---
 
@@ -23,6 +24,61 @@ main.py (APScheduler — runs every 15min during market hours)
 
 **Flow**: Scanner detects setup → News checks for vetoes → Macro checks regime →
 Risk sizes the position → Judge scores all inputs → Executor places order (or skips)
+
+---
+
+## Current Status
+
+Paper trading on Alpaca. No live trading has been attempted.
+
+**What works end-to-end:**
+
+- **Scanner** — VWAP, FVG, BOS/CHoCH detection, EMA stack, ADX, RVOL gates
+- **News researcher** — Finnhub + SEC EDGAR + Reddit, Claude Haiku sentiment synthesis
+- **Macro context** — VIX regime classification, broad market breadth, economic calendar
+- **Risk analyst** — Position sizing, portfolio heat, daily loss limits, correlation checks
+- **Signal judge** — Weighted multi-factor scoring, confidence tier gating
+- **Trade executor** — Alpaca bracket orders with take-profit and stop-loss
+- **Journal sync** — SQLite trade log with lifecycle tracking (open → filled → closed)
+- **Post-mortem** — Daily agent attribution analysis, win-rate and R-multiple tracking
+- **Dashboard** — FastAPI + vanilla JS live dashboard for monitoring signals and trades
+
+---
+
+## Limitations
+
+- **No slippage or commission modeling.** Backtests assume fills at signal price. Real
+  fills differ, especially on smaller-cap names or at open.
+- **Not HFT or even fast intraday.** Claude API round-trips add 1–3 seconds per ticker.
+  The system runs on 5-minute bars and scans every 15 minutes — it is deliberately slow.
+- **Single-exchange US equities only.** Alpaca paper trading; no crypto, futures, or
+  international markets.
+- **Backtester diverges from live logic.** The `backtesting/strategy.py` file is a
+  separate harness that does not share code with the live agents. Backtested numbers
+  should be treated as rough directional signal, not reliable performance estimates.
+- **Free-tier API rate limits.** Finnhub and the Alpaca free tier have request caps.
+  Scanning large watchlists (40+ tickers) can exhaust limits within a session.
+
+---
+
+## What I'd Do Differently
+
+- **Proper event sourcing for trade state.** The current SQLite journal is append-only
+  but trade lifecycle updates are patched in place. A proper event log (each state
+  transition as an immutable row) would make replay and debugging much easier.
+- **Backtester as a thin wrapper around live agent code.** Right now the backtester
+  reimplements signal logic separately, which means it drifts. The right approach is
+  to run the actual LangGraph pipeline against historical bars with mocked I/O.
+- **More integration tests.** Unit tests exist for individual agents but there are few
+  end-to-end tests that exercise the full pipeline with mocked dependencies. Bugs that
+  cross agent boundaries are hard to catch.
+- **TypedDict return values throughout.** Several agent functions return plain `dict`.
+  Using `TypedDict` (already defined in `state.py`) everywhere would let the type
+  checker catch field name typos at write-time instead of runtime.
+- **Separate config validation from config loading.** `config/settings.py` reads env
+  vars and sets defaults at import time. There's no validation pass, so a missing key
+  surfaces as an obscure `None`-related error deep in an agent rather than a clear
+  startup failure.
 
 ---
 
@@ -53,7 +109,7 @@ Free API keys needed:
 source venv/bin/activate
 python backtesting/strategy.py --ticker AAPL --period 1y
 ```
-Check win rate and profit factor. Aim for profit factor > 1.5 before going live.
+Check win rate and profit factor. Treat the output as directional only — see Limitations.
 
 ### 4. Start the bot (paper trading)
 ```bash
@@ -62,8 +118,8 @@ python main.py
 
 ### 5. Open the dashboard
 ```bash
-streamlit run dashboard/app.py
-# Opens at http://localhost:8501
+uvicorn dashboard.app:app --host 127.0.0.1 --port 8000
+# Opens at http://localhost:8000
 ```
 
 ---
@@ -124,7 +180,7 @@ trading-agent-system/
 ├── backtesting/
 │   └── strategy.py           ← backtesting.py harness
 ├── dashboard/
-│   └── app.py                ← Streamlit monitoring UI
+│   └── app.py                ← FastAPI monitoring dashboard
 ├── config/
 │   └── settings.py           ← All configurable parameters
 ├── data/                     ← Created at runtime (gitignored)
@@ -197,7 +253,7 @@ Use Tailscale (free) to access the dashboard from anywhere:
 # https://tailscale.com/download
 
 # Then access dashboard from any device on your Tailscale network:
-http://mac-mini:8501
+http://mac-mini:8000
 ```
 
 ---

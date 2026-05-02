@@ -29,11 +29,17 @@ from config.settings import (
 from agents.journal import estimate_open_risk_from_journal, get_daily_realized_pnl, get_daily_trade_count, get_open_trades, get_recent_signals
 from agents.state import TradingState
 
-alpaca_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=IS_PAPER)
+_alpaca_client = None
+
+def _get_alpaca():
+    global _alpaca_client
+    if _alpaca_client is None:
+        _alpaca_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=IS_PAPER)
+    return _alpaca_client
 
 _portfolio_cache: dict = {"timestamp": None, "data": None}
 
-MAX_DAILY_TRADES_PER_TICKER = 2
+MAX_DAILY_TRADES_PER_TICKER = 3
 MAX_DAILY_TRADES_TOTAL = 10
 
 CORRELATED_GROUPS = {
@@ -64,7 +70,7 @@ def get_open_orders() -> list:
     """Fetch currently open orders from Alpaca."""
     try:
         request = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=100, nested=True)
-        return alpaca_client.get_orders(filter=request)
+        return _get_alpaca().get_orders(filter=request)
     except Exception as e:
         logger.warning(f"[risk_analyst] open orders fetch error: {e}")
         return []
@@ -83,8 +89,8 @@ def get_portfolio_state(force_refresh: bool = False) -> dict:
         return _portfolio_cache["data"]
 
     try:
-        account = alpaca_client.get_account()
-        positions = alpaca_client.get_all_positions()
+        account = _get_alpaca().get_account()
+        positions = _get_alpaca().get_all_positions()
         open_orders = get_open_orders()
 
         portfolio_value = float(account.portfolio_value)
@@ -143,7 +149,7 @@ def get_portfolio_state(force_refresh: bool = False) -> dict:
             "open_order_symbols": [],
             "estimated_open_risk": 0.0,
             "heat_pct": 0.0,
-            "available_slots": MAX_OPEN_POSITIONS,
+            "available_slots": 0,
         }
         _portfolio_cache["timestamp"] = now
         _portfolio_cache["data"] = fallback
