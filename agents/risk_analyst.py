@@ -43,7 +43,10 @@ MAX_DAILY_TRADES_PER_TICKER = 3
 MAX_DAILY_TRADES_TOTAL = 10
 
 CORRELATED_GROUPS = {
-    "mega_cap_tech": {"AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN", "AMD", "CRM", "NFLX", "TSLA", "QQQ"},
+    "mega_cap_tech": {"NVDA", "GOOGL", "META", "AMZN", "AMD", "NFLX", "TSLA", "NOW", "NET"},
+    "semiconductors": {"NVDA", "AMD", "MU"},
+    "crypto_fintech": {"COIN", "SOFI"},
+    "energy": {"CVX"},
     "index_beta": {"SPY", "QQQ", "IWM", "VXX"},
 }
 

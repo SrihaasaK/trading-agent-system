@@ -38,10 +38,12 @@ REQUIRE_TRADE_APPROVAL = os.getenv("REQUIRE_TRADE_APPROVAL", "true").lower() == 
 # Keep this under 40 tickers — quality over quantity
 
 WATCHLIST: list[str] = [
-    # Mega-cap tech (high liquidity, tight spreads)
-    "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN",
-    # High-volume individual names
-    "TSLA", "AMD", "CRM", "PLTR", "UBER",
+    # Mega-cap tech (backtest-validated)
+    "NVDA", "GOOGL", "META", "AMZN", "AMD", "NFLX",
+    # High-volume growth (strong backtest performance)
+    "TSLA", "COIN", "BA", "NOW", "MU", "SOFI", "NET",
+    # Sector diversification (healthcare, energy)
+    "UNH", "CVX",
 ]
 
 # Tickers used only for macro context — not traded directly
