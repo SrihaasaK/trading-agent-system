@@ -40,8 +40,6 @@ REQUIRE_TRADE_APPROVAL = os.getenv("REQUIRE_TRADE_APPROVAL", "true").lower() == 
 WATCHLIST: list[str] = [
     # Mega-cap tech (high liquidity, tight spreads)
     "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN",
-    # ETFs for macro regime detection
-    "SPY", "QQQ", "IWM",
     # High-volume individual names
     "TSLA", "AMD", "CRM", "PLTR", "UBER",
 ]
@@ -109,9 +107,9 @@ SIGNAL_WEIGHTS = {
 # risk_analyst uses scanner confidence for a provisional tier; signal_judge
 # overwrites with the final weighted score tier if they differ.
 CONFIDENCE_TIERS = {
-    "SWING":    {"min_score": 0.82, "atr_stop_mult": 3.0, "reward_risk": 3.0, "size_factor": 1.0},
-    "STANDARD": {"min_score": 0.68, "atr_stop_mult": 2.25, "reward_risk": 2.0, "size_factor": 1.0},
-    "SCALP":    {"min_score": 0.65, "atr_stop_mult": 1.75, "reward_risk": 1.5, "size_factor": 0.75},
+    "SWING":    {"min_score": 0.82, "atr_stop_mult": 3.5, "reward_risk": 3.0, "size_factor": 1.25},
+    "STANDARD": {"min_score": 0.68, "atr_stop_mult": 2.75, "reward_risk": 2.0, "size_factor": 1.15},
+    "SCALP":    {"min_score": 0.65, "atr_stop_mult": 2.0, "reward_risk": 1.5, "size_factor": 0.75},
 }
 
 

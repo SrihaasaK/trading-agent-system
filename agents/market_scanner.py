@@ -662,6 +662,22 @@ def scan_ticker(ticker: str) -> dict:
         vwap_position = check_vwap_position(price, vwap_val, direction)
         rvol_floor    = required_rvol(session, len(df_today))
 
+        # ── 5-DAY TREND FILTER ──────────────────────────────────────────
+        # Only trade in the direction of the recent trend to avoid chop.
+        # Uses the 5-bar EMA on the full multi-day dataset as a proxy for
+        # whether the stock has short-term momentum in our direction.
+        ema5_full = ema(close, 5)
+        if len(ema5_full) >= 2:
+            trend_up = float(ema5_full.iloc[-1]) > float(ema5_full.iloc[-2])
+            if direction == "LONG" and not trend_up:
+                return {"ticker": ticker, "valid": False,
+                        "reason": "5-day trend filter: EMA5 declining, skip LONG",
+                        "direction": direction, "price": price}
+            if direction == "SHORT" and trend_up:
+                return {"ticker": ticker, "valid": False,
+                        "reason": "5-day trend filter: EMA5 rising, skip SHORT",
+                        "direction": direction, "price": price}
+
         # ── HARD GATE EVALUATION (4 of 5 must pass) ────────────────────
         hard_gates = {
             "session":        session != "CLOSED",
