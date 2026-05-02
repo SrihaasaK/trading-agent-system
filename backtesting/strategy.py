@@ -37,11 +37,7 @@ from agents.market_scanner import (
     direction_matches_signal,
     normalize_direction,
 )
-from config.settings import CONFIDENCE_TIERS, MIN_CONFIDENCE_SCORE
-
-# Use STANDARD tier parameters as the backtesting baseline
-ATR_STOP_MULTIPLIER = CONFIDENCE_TIERS["STANDARD"]["atr_stop_mult"]
-MIN_REWARD_RISK_RATIO = CONFIDENCE_TIERS["STANDARD"]["reward_risk"]
+from config.settings import ATR_STOP_MULTIPLIER, MIN_CONFIDENCE_SCORE, MIN_REWARD_RISK_RATIO
 
 
 def session_label(timestamp: pd.Timestamp) -> str:
