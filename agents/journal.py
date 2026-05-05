@@ -469,10 +469,48 @@ def get_trades_for_dashboard(days: int = 30) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def _get_closed_trades(days: int = 30) -> List[Dict[str, Any]]:
+    """Return all closed non-SKIP trades within the lookback window (no row limit)."""
+    init_db()
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            SELECT * FROM trades
+            WHERE direction != 'SKIP' AND closed = 1 AND timestamp >= ?
+            ORDER BY closed_at ASC
+            """,
+            (cutoff,),
+        )
+        return rowdicts(cursor)
+    finally:
+        conn.close()
+
+
+def _get_executed_trades(days: int = 30) -> List[Dict[str, Any]]:
+    """Return all non-SKIP trades within the lookback window (no row limit)."""
+    init_db()
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            SELECT * FROM trades
+            WHERE direction != 'SKIP' AND timestamp >= ?
+            ORDER BY timestamp DESC
+            """,
+            (cutoff,),
+        )
+        return rowdicts(cursor)
+    finally:
+        conn.close()
+
+
 def get_dashboard_stats(days: int = 30) -> Dict[str, Any]:
     """Compute aggregate performance stats for the dashboard header and charts."""
-    rows = get_trades_for_dashboard(days)
-    closed = [r for r in rows if r.get("closed") == 1 and r.get("direction") != "SKIP"]
+    closed = _get_closed_trades(days)
+    all_executed = _get_executed_trades(days)
     wins   = [r for r in closed if r.get("outcome") == "WIN"]
     losses = [r for r in closed if r.get("outcome") == "LOSS"]
 
@@ -484,24 +522,20 @@ def get_dashboard_stats(days: int = 30) -> Dict[str, Any]:
     gross_losses  = abs(sum(r.get("pnl_dollars", 0) for r in losses))
     profit_factor = gross_wins / gross_losses if gross_losses > 0 else 0.0
 
-    equity_rows = sorted(
-        [r for r in closed if r.get("closed_at")],
-        key=lambda r: r["closed_at"],
-    )
     cumulative = 0.0
     equity_curve = []
-    for r in equity_rows:
-        cumulative += r.get("pnl_dollars", 0)
-        equity_curve.append({
-            "date": r["closed_at"][:10],
-            "cumulative_pnl": round(cumulative, 2),
-        })
+    for r in closed:
+        if r.get("closed_at"):
+            cumulative += r.get("pnl_dollars", 0)
+            equity_curve.append({
+                "date": r["closed_at"][:10],
+                "cumulative_pnl": round(cumulative, 2),
+            })
 
     return {
-        "total_signals":     len(rows),
-        "executed_trades":   len([r for r in rows if r.get("direction") != "SKIP"
-                                   and r.get("approval_status") not in ("PENDING_APPROVAL", "FAILED", "SKIPPED")]),
-        "pending_approvals": len([r for r in rows if r.get("approval_status") == "PENDING_APPROVAL"]),
+        "total_signals":     len(get_trades_for_dashboard(days)),
+        "executed_trades":   len(all_executed),
+        "pending_approvals": len([r for r in all_executed if r.get("approval_status") == "PENDING_APPROVAL"]),
         "closed_trades":     total_closed,
         "win_rate":          round(win_rate, 4),
         "avg_r":             round(avg_r, 3),

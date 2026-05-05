@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from agents.journal import get_dashboard_stats, get_trades_for_dashboard
+from agents.journal import get_dashboard_stats, get_trades_for_dashboard, _get_executed_trades
 from config.settings import ALPACA_API_KEY, ALPACA_SECRET_KEY, IS_PAPER
 
 app = FastAPI(title="Trading Agent Dashboard", docs_url=None, redoc_url=None)
@@ -79,11 +79,9 @@ def trades(days: int = 30) -> JSONResponse:
 @app.get("/api/positions")
 def positions_history(days: int = 7) -> JSONResponse:
     """Return all non-SKIP trades (open and closed) for the positions view."""
-    rows = get_trades_for_dashboard(days)
+    rows = _get_executed_trades(days)
     trades = []
     for r in rows:
-        if r.get("direction") == "SKIP":
-            continue
         trades.append({
             "id": r.get("id"),
             "ticker": r.get("ticker", ""),
