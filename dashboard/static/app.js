@@ -153,10 +153,26 @@ async function loadStats() {
     if (sub) sub.textContent = s.profit_factor >= 2 ? 'excellent' : s.profit_factor >= 1.5 ? 'good' : s.profit_factor >= 1 ? 'marginal' : 'unprofitable';
   }
 
-  const totalPnlClass = s.total_pnl > 0 ? 'pos-glow' : s.total_pnl < 0 ? 'neg-glow' : '';
-  setText('s-pnl', fmt$(s.total_pnl), totalPnlClass);
+  // Compute unrealized P&L from portfolio positions and net P&L
+  let unrealizedPnl = 0;
+  try {
+    const pData = await fetch('/api/portfolio').then(r => r.json()).catch(() => ({}));
+    unrealizedPnl = (pData.positions || []).reduce((sum, p) => sum + (p.pnl || 0), 0);
+  } catch (e) { /* ignore */ }
+
+  const realizedPnl = s.total_pnl || 0;
+  const netPnl = realizedPnl + unrealizedPnl;
+  const netPnlClass = netPnl > 0 ? 'pos-glow' : netPnl < 0 ? 'neg-glow' : '';
+  setText('s-pnl', fmt$(netPnl), netPnlClass);
+  const pnlSub = el('s-pnl-sub');
+  if (pnlSub) pnlSub.textContent = `realized ${fmt$(realizedPnl)} + open ${fmt$(unrealizedPnl)}`;
+
   setText('s-closed', String(s.closed_trades || 0));
-  setText('s-pending', String(s.pending_approvals || 0), s.pending_approvals > 0 ? 'warn' : '');
+  const closedSub = el('s-closed-sub');
+  if (closedSub) closedSub.textContent = `${s.executed_trades || 0} total executed`;
+
+  const unrealizedClass = unrealizedPnl > 0 ? 'pos-glow' : unrealizedPnl < 0 ? 'neg-glow' : '';
+  setText('s-unrealized', fmt$(unrealizedPnl), unrealizedClass);
 
   renderEquityCurve(s.equity_curve || []);
 }
