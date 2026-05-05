@@ -257,18 +257,15 @@ def sync_trade_journal() -> dict:
             continue
 
         try:
-            import signal as _sig
+            from concurrent.futures import ThreadPoolExecutor
 
-            def _timeout_handler(signum, frame):
-                raise TimeoutError(f"Alpaca order fetch timed out for {ticker}")
-
-            old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
-            _sig.alarm(10)
-            try:
-                order = _get_alpaca().get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=True))
-            finally:
-                _sig.alarm(0)
-                _sig.signal(_sig.SIGALRM, old_handler)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    _get_alpaca().get_order_by_id,
+                    order_id,
+                    filter=GetOrderByIdRequest(nested=True),
+                )
+                order = future.result(timeout=10)
         except Exception as e:
             logger.warning(f"[trade_executor] sync order fetch failed for {ticker}: {e}")
             continue
@@ -464,6 +461,19 @@ def eod_force_close() -> dict:
         if symbol not in live_positions:
             continue
         try:
+            # Cancel open bracket legs first — Alpaca holds shares for pending TP/SL orders
+            try:
+                open_orders = _get_alpaca().get_orders(
+                    filter=GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=100, nested=True)
+                )
+                for o in open_orders:
+                    if o.symbol == symbol:
+                        _get_alpaca().cancel_order_by_id(str(o.id))
+                        logger.info(f"[trade_executor] EOD close: canceled order {o.id} for {symbol}")
+                import time
+                time.sleep(1)
+            except Exception as cancel_err:
+                logger.warning(f"[trade_executor] EOD close: order cancel failed for {symbol}: {cancel_err}")
             _get_alpaca().close_position(symbol)
             symbols_closed.append(symbol)
             closed += 1
