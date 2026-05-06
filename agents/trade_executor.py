@@ -281,19 +281,46 @@ def sync_trade_journal() -> dict:
             exit_details = _extract_exit_details(order, row)
             if not exit_details:
                 # Both bracket legs canceled (e.g., EOD force-close or manual liquidation).
-                # Position is gone but no exit leg filled — mark closed with entry price.
+                # Try to find the actual close price from recent closed orders for this symbol.
                 entry = float(row.get("entry_price", 0) or 0)
+                stop_loss = float(row.get("stop_loss", 0) or 0)
+                shares = int(row.get("shares", 0) or 0)
+                direction = row.get("direction", "LONG")
+                close_price = entry  # fallback
+
+                try:
+                    recent_closed = _get_alpaca().get_orders(
+                        filter=GetOrdersRequest(
+                            status=QueryOrderStatus.CLOSED, limit=50, nested=False,
+                        )
+                    )
+                    for co in recent_closed:
+                        if co.symbol == ticker and co.filled_avg_price:
+                            close_price = float(co.filled_avg_price)
+                            break
+                except Exception:
+                    pass
+
+                if direction == "LONG":
+                    pnl_dollars = (close_price - entry) * shares
+                else:
+                    pnl_dollars = (entry - close_price) * shares
+                risk_per_share = abs(entry - stop_loss)
+                total_risk = risk_per_share * shares
+                pnl_r = pnl_dollars / total_risk if total_risk > 0 else 0.0
+                outcome = "WIN" if pnl_dollars > 0 else "LOSS" if pnl_dollars < 0 else "BREAKEVEN"
+
                 exit_details = {
-                    "close_price": entry,
-                    "pnl_dollars": 0.0,
-                    "pnl_r": 0.0,
-                    "outcome": "BREAKEVEN",
+                    "close_price": round(close_price, 4),
+                    "pnl_dollars": round(pnl_dollars, 2),
+                    "pnl_r": round(pnl_r, 3),
+                    "outcome": outcome,
                     "exit_reason": "MANUAL_EXIT",
                     "closed_at": datetime.now().isoformat(),
                     "hold_minutes": 0.0,
                     "order_status": status,
                 }
-                logger.info(f"[trade_executor] {ticker} closed externally (no exit leg) — marking as MANUAL_EXIT")
+                logger.info(f"[trade_executor] {ticker} closed externally at ${close_price:.2f} — {outcome} ${pnl_dollars:+,.2f}")
             if exit_details:
                 mark_trade_closed(order_id=order_id, **exit_details)
                 closed += 1
@@ -395,30 +422,42 @@ def check_trailing_stops() -> dict:
                     stop_leg = leg
                     break
 
-            if stop_leg is None:
-                continue
+            side = OrderSide.SELL if direction == "LONG" else OrderSide.BUY
+            shares_qty = int(trade.get("shares", 0) or 0)
 
-            try:
-                from alpaca.trading.requests import ReplaceOrderRequest
-                _get_alpaca().replace_order_by_id(
-                    str(stop_leg.id),
-                    ReplaceOrderRequest(stop_price=new_stop),
-                )
-            except Exception:
-                # Fallback: cancel and resubmit
-                _get_alpaca().cancel_order_by_id(str(stop_leg.id))
+            if stop_leg is None:
+                # No stop leg exists (bracket legs were canceled) — place a new one
                 from alpaca.trading.requests import StopOrderRequest
-                side = OrderSide.SELL if direction == "LONG" else OrderSide.BUY
                 _get_alpaca().submit_order(
-                    MarketOrderRequest(
+                    StopOrderRequest(
                         symbol=ticker,
-                        qty=int(trade.get("shares", 0) or 0),
+                        qty=shares_qty,
                         side=side,
-                        time_in_force=TimeInForce.DAY,
-                        type="stop",
+                        time_in_force=TimeInForce.GTC,
                         stop_price=new_stop,
                     )
                 )
+                logger.warning(f"[trade_executor] trailing stop: {ticker} had NO stop — placed new stop at ${new_stop:.2f}")
+            else:
+                try:
+                    from alpaca.trading.requests import ReplaceOrderRequest
+                    _get_alpaca().replace_order_by_id(
+                        str(stop_leg.id),
+                        ReplaceOrderRequest(stop_price=new_stop),
+                    )
+                except Exception:
+                    # Fallback: cancel and resubmit
+                    _get_alpaca().cancel_order_by_id(str(stop_leg.id))
+                    from alpaca.trading.requests import StopOrderRequest
+                    _get_alpaca().submit_order(
+                        StopOrderRequest(
+                            symbol=ticker,
+                            qty=shares_qty,
+                            side=side,
+                            time_in_force=TimeInForce.GTC,
+                            stop_price=new_stop,
+                        )
+                    )
 
             adjusted += 1
             logger.info(f"[trade_executor] trailing stop: {ticker} stop moved to ${new_stop:.2f} ({reason})")
