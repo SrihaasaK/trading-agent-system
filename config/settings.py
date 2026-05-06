@@ -82,8 +82,8 @@ GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 # ── Risk Management ───────────────────────────────────────────────────────────
 
 RISK_PER_TRADE_PCT      = 0.01      # 1% of portfolio per trade
-MAX_PORTFOLIO_HEAT_PCT  = 0.05      # max 5% total at risk across all positions
-MAX_OPEN_POSITIONS      = 5         # never hold more than 5 positions
+MAX_PORTFOLIO_HEAT_PCT  = 0.08      # max 8% total at risk across all positions
+MAX_OPEN_POSITIONS      = 8         # never hold more than 8 positions
 MAX_POSITION_NOTIONAL_PCT = 0.20    # max 20% of portfolio in a single name
 ATR_LOOKBACK            = 14        # periods for ATR calculation
 TRADE_COOLDOWN_MINUTES  = 60        # avoid repeated entries on the same ticker

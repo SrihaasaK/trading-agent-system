@@ -40,7 +40,7 @@ def _get_alpaca():
 _portfolio_cache: dict = {"timestamp": None, "data": None}
 
 MAX_DAILY_TRADES_PER_TICKER = 3
-MAX_DAILY_TRADES_TOTAL = 10
+MAX_DAILY_TRADES_TOTAL = 12
 
 CORRELATED_GROUPS = {
     "mega_cap_tech": {"NVDA", "GOOGL", "META", "AMZN", "AMD", "NFLX", "TSLA", "NOW", "NET"},
@@ -321,9 +321,9 @@ def assess_risk(state: TradingState, portfolio: dict) -> dict:
         reasons.append(f"Reward:risk {rr_ratio:.2f} below {tier_name} minimum {rr_target:.2f}")
 
     correlation_overlap = _correlation_pressure(ticker, portfolio["open_symbols"])
-    if correlation_overlap >= 3:
+    if correlation_overlap >= 4:
         reasons.append(f"Correlation risk too high: {correlation_overlap} similar names already open")
-    elif correlation_overlap == 2:
+    elif correlation_overlap == 3:
         warnings.append("Elevated correlation risk with existing positions")
         grade = "YELLOW"
 
