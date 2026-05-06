@@ -357,6 +357,17 @@ if __name__ == "__main__":
         tags="rocket",
     )
 
+    # Reconcile journal on every startup — catches externally-closed trades
+    logger.info("Running startup journal reconciliation...")
+    try:
+        sync_summary = sync_trade_journal()
+        logger.info(
+            f"Startup sync — checked={sync_summary['checked']} "
+            f"closed={sync_summary['closed']} updated={sync_summary['updated']}"
+        )
+    except Exception as e:
+        logger.warning(f"Startup sync failed: {e}")
+
     # Run an immediate scan if we're currently in market hours
     if is_market_hours():
         logger.info("Market is open — running immediate scan")
