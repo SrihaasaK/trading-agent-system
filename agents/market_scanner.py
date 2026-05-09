@@ -98,7 +98,7 @@ def get_session_label() -> str:
 
 def session_quality(session: str) -> float:
     """Morning and afternoon sessions have better setups than midday."""
-    return {"MORNING": 1.0, "AFTERNOON": 0.0, "MIDDAY": 0.70, "CLOSED": 0.0}.get(session, 0.5)
+    return {"MORNING": 1.0, "AFTERNOON": 0.85, "MIDDAY": 0.60, "CLOSED": 0.0}.get(session, 0.5)
 
 
 def normalize_direction(label: str) -> str:

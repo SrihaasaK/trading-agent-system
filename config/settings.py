@@ -39,9 +39,9 @@ REQUIRE_TRADE_APPROVAL = os.getenv("REQUIRE_TRADE_APPROVAL", "true").lower() == 
 
 WATCHLIST: list[str] = [
     # Mega-cap tech (backtest-validated)
-    "NVDA", "GOOGL", "META", "AMZN", "AMD", "NFLX",
+    "NVDA", "META", "AMZN", "AMD", "NFLX",
     # High-volume growth (strong backtest performance)
-    "TSLA", "COIN", "BA", "NOW", "MU", "SOFI", "NET",
+    "TSLA", "COIN", "BA", "MU", "SOFI", "NET",
     # Sector diversification (healthcare, energy)
     "UNH", "CVX",
 ]
